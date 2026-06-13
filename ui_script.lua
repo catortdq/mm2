@@ -98,10 +98,12 @@ button.MouseLeave:Connect(function()
     button.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
 end)
 
--- Button click action
+-- Button click action - Equip fake knife
 button.MouseButton1Click:Connect(function()
-    print("Button clicked!")
-    -- Add your custom action here
+    if tool then
+        tool.Parent = lp.Character
+        print("Fake Knife equipped!")
+    end
 end)
 
 -- Create Close Button
