@@ -1,161 +1,230 @@
--- Roblox UI Script - Loadstring Compatible
--- Usage: loadstring(game:HttpGet("YOUR_URL_HERE"))()
+--[[
+    Server-Authoritative Trading System
+    Place this script in ServerScriptService
+    
+    Features:
+    - Whitelist-based trade acceptance
+    - Server-side validation only
+    - RemoteEvent spoofing protection
+    - UserId-based authentication
+    - Rate limiting
+    - Comprehensive logging
+]]
 
 local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- Remove existing UI if present
-local existingUI = PlayerGui:FindFirstChild("CustomUI")
-if existingUI then
-    existingUI:Destroy()
+-- ============================================
+-- CONFIGURATION
+-- ============================================
+
+-- Whitelist of UserIds allowed to trade with you
+-- Replace these with actual UserIds from your trusted users
+local WHITELISTED_USERIDS = {
+    123456789,  -- Example: Replace with actual UserId
+    987654321,  -- Example: Replace with actual UserId
+    -- Add more UserIds as needed
+}
+
+-- RemoteEvent name for trade requests
+local TRADE_REMOTE_NAME = "TradeRequest"
+
+-- Rate limiting: Maximum trades per minute per player
+local MAX_TRADES_PER_MINUTE = 10
+
+-- ============================================
+-- SECURITY & VALIDATION
+-- ============================================
+
+-- Track trade requests for rate limiting
+local playerTradeCounts = {}
+local lastCleanupTime = tick()
+
+-- Validate that a player is legitimate
+local function validatePlayer(player)
+    if not player or not player:IsA("Player") then
+        return false, "Invalid player"
+    end
+    
+    if not player.UserId or player.UserId <= 0 then
+        return false, "Invalid UserId"
+    end
+    
+    return true, nil
 end
 
--- Create ScreenGui
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "CustomUI"
-screenGui.ResetOnSpawn = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.Parent = PlayerGui
-
--- Create Main Frame
-local mainFrame = Instance.new("Frame")
-mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.new(0, 400, 0, 300)
-mainFrame.Position = UDim2.new(0.5, -200, 0.5, -150)
-mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
-
--- Add rounded corners
-local corners = Instance.new("UICorner")
-corners.CornerRadius = UDim.new(0, 12)
-corners.Parent = mainFrame
-
--- Add shadow
-local shadow = Instance.new("UIStroke")
-shadow.Color = Color3.fromRGB(0, 0, 0)
-shadow.Thickness = 2
-shadow.Transparency = 0.5
-shadow.Parent = mainFrame
-
--- Create Title Bar
-local titleBar = Instance.new("Frame")
-titleBar.Name = "TitleBar"
-titleBar.Size = UDim2.new(1, 0, 0, 40)
-titleBar.Position = UDim2.new(0, 0, 0, 0)
-titleBar.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-titleBar.BorderSizePixel = 0
-titleBar.Parent = mainFrame
-
-local titleCorners = Instance.new("UICorner")
-titleCorners.CornerRadius = UDim.new(0, 12)
-titleCorners.Parent = titleBar
-
--- Create Title
-local title = Instance.new("TextLabel")
-title.Name = "Title"
-title.Size = UDim2.new(1, 0, 1, 0)
-title.Position = UDim2.new(0, 0, 0, 0)
-title.BackgroundTransparency = 1
-title.Text = "Custom UI"
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
-title.TextSize = 20
-title.Font = Enum.Font.GothamBold
-title.Parent = titleBar
-
--- Create Content Frame
-local contentFrame = Instance.new("Frame")
-contentFrame.Name = "ContentFrame"
-contentFrame.Size = UDim2.new(1, -20, 1, -50)
-contentFrame.Position = UDim2.new(0, 10, 0, 45)
-contentFrame.BackgroundTransparency = 1
-contentFrame.Parent = mainFrame
-
--- Create Sample Button
-local button = Instance.new("TextButton")
-button.Name = "ActionButton"
-button.Size = UDim2.new(1, 0, 0, 40)
-button.Position = UDim2.new(0, 0, 0, 0)
-button.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
-button.BorderSizePixel = 0
-button.Text = "Click Me!"
-button.TextColor3 = Color3.fromRGB(255, 255, 255)
-button.TextSize = 18
-button.Font = Enum.Font.GothamSemibold
-button.Parent = contentFrame
-
-local buttonCorners = Instance.new("UICorner")
-buttonCorners.CornerRadius = UDim.new(0, 8)
-buttonCorners.Parent = button
-
--- Button hover effect
-button.MouseEnter:Connect(function()
-    button.BackgroundColor3 = Color3.fromRGB(100, 149, 237)
-end)
-
-button.MouseLeave:Connect(function()
-    button.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
-end)
-
--- Button click action
-button.MouseButton1Click:Connect(function()
-    print("Button clicked!")
-    -- Add your custom action here
-end)
-
--- Create Close Button
-local closeButton = Instance.new("TextButton")
-closeButton.Name = "CloseButton"
-closeButton.Size = UDim2.new(0, 30, 0, 30)
-closeButton.Position = UDim2.new(1, -35, 0, 5)
-closeButton.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
-closeButton.BorderSizePixel = 0
-closeButton.Text = "X"
-closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeButton.TextSize = 16
-closeButton.Font = Enum.Font.GothamBold
-closeButton.Parent = titleBar
-
-local closeCorners = Instance.new("UICorner")
-closeCorners.CornerRadius = UDim.new(0, 6)
-closeCorners.Parent = closeButton
-
-closeButton.MouseButton1Click:Connect(function()
-    screenGui:Destroy()
-end)
-
--- Make UI draggable
-local dragToggle = nil
-local dragSpeed = 0.25
-local dragStart = nil
-local startPos = nil
-
-titleBar.InputBegan:Connect(function(input)
-    if (input.UserInputType == Enum.UserInputType.MouseButton1) then
-        dragToggle = true
-        dragStart = input.Position
-        startPos = mainFrame.Position
-        input.Changed:Connect(function()
-            if (input.UserInputState == Enum.UserInputState.End) then
-                dragToggle = false
+-- Check if player is rate limited
+local function checkRateLimit(player)
+    local currentTime = tick()
+    
+    -- Clean up old entries every minute
+    if currentTime - lastCleanupTime > 60 then
+        for userId, data in pairs(playerTradeCounts) do
+            if currentTime - data.lastTradeTime > 60 then
+                playerTradeCounts[userId] = nil
             end
-        end)
+        end
+        lastCleanupTime = currentTime
     end
-end)
+    
+    -- Check current player's trade count
+    local playerData = playerTradeCounts[player.UserId] or { count = 0, lastTradeTime = currentTime }
+    
+    if currentTime - playerData.lastTradeTime > 60 then
+        -- Reset count if more than a minute has passed
+        playerData.count = 0
+    end
+    
+    if playerData.count >= MAX_TRADES_PER_MINUTE then
+        return false, "Rate limit exceeded"
+    end
+    
+    return true, nil
+end
 
-titleBar.InputChanged:Connect(function(input)
-    if (input.UserInputType == Enum.UserInputType.MouseMovement) then
-        if (dragToggle and startPos) then
-            local delta = input.Position - dragStart
-            mainFrame.Position = UDim2.new(
-                startPos.X.Scale,
-                startPos.X.Offset + delta.X,
-                startPos.Y.Scale,
-                startPos.Y.Offset + delta.Y
-            )
+-- Update rate limit counter
+local function updateRateLimit(player)
+    local playerData = playerTradeCounts[player.UserId] or { count = 0, lastTradeTime = tick() }
+    playerData.count = playerData.count + 1
+    playerData.lastTradeTime = tick()
+    playerTradeCounts[player.UserId] = playerData
+end
+
+-- Check if UserId is whitelisted
+local function isWhitelisted(userId)
+    for _, whitelistedId in ipairs(WHITELISTED_USERIDS) do
+        if whitelistedId == userId then
+            return true
         end
     end
+    return false
+end
+
+-- ============================================
+-- TRADE REQUEST HANDLING
+-- ============================================
+
+-- Create or get the RemoteEvent
+local tradeRemote = ReplicatedStorage:FindFirstChild(TRADE_REMOTE_NAME)
+if not tradeRemote then
+    tradeRemote = Instance.new("RemoteEvent")
+    tradeRemote.Name = TRADE_REMOTE_NAME
+    tradeRemote.Parent = ReplicatedStorage
+    warn("Created TradeRequest RemoteEvent in ReplicatedStorage")
+end
+
+-- Log trade activity
+local function logTradeActivity(action, sender, receiver, reason)
+    local logMessage = string.format(
+        "[TradeSystem] %s | Sender: %s (%d) | Receiver: %s (%d) | Reason: %s",
+        action,
+        sender.Name,
+        sender.UserId,
+        receiver.Name,
+        receiver.UserId,
+        reason or "N/A"
+    )
+    print(logMessage)
+end
+
+-- Handle incoming trade requests
+tradeRemote.OnServerEvent:Connect(function(player, targetPlayer, tradeData)
+    -- ============================================
+    -- SECURITY: Validate sender
+    -- ============================================
+    local isValid, errorMsg = validatePlayer(player)
+    if not isValid then
+        warn(string.format("[Security] Invalid trade request from: %s - %s", tostring(player), errorMsg))
+        return
+    end
+    
+    -- ============================================
+    -- SECURITY: Check rate limiting
+    -- ============================================
+    local canTrade, rateError = checkRateLimit(player)
+    if not canTrade then
+        warn(string.format("[Security] Rate limit hit for player %s (%d)", player.Name, player.UserId))
+        tradeRemote:FireClient(player, "REJECTED", rateError)
+        return
+    end
+    
+    -- ============================================
+    -- SECURITY: Validate target player
+    -- ============================================
+    if not targetPlayer or not targetPlayer:IsA("Player") then
+        warn(string.format("[Security] Invalid target player from %s", player.Name))
+        tradeRemote:FireClient(player, "REJECTED", "Invalid target player")
+        return
+    end
+    
+    -- ============================================
+    -- SECURITY: Validate trade data structure
+    -- ============================================
+    if type(tradeData) ~= "table" then
+        warn(string.format("[Security] Invalid trade data format from %s", player.Name))
+        tradeRemote:FireClient(player, "REJECTED", "Invalid trade data")
+        return
+    end
+    
+    -- ============================================
+    -- SECURITY: Check for self-trading
+    -- ============================================
+    if player.UserId == targetPlayer.UserId then
+        warn(string.format("[Security] Self-trade attempt by %s", player.Name))
+        tradeRemote:FireClient(player, "REJECTED", "Cannot trade with yourself")
+        return
+    end
+    
+    -- ============================================
+    -- WHITELIST CHECK
+    -- ============================================
+    local senderWhitelisted = isWhitelisted(player.UserId)
+    local targetWhitelisted = isWhitelisted(targetPlayer.UserId)
+    
+    -- Log the trade request
+    logTradeActivity("REQUEST", player, targetPlayer, 
+        string.format("Sender Whitelisted: %s | Target Whitelisted: %s", 
+            tostring(senderWhitelisted), tostring(targetWhitelisted)))
+    
+    -- ============================================
+    -- TRADE DECISION LOGIC
+    -- ============================================
+    
+    -- Accept if sender is whitelisted
+    if senderWhitelisted then
+        updateRateLimit(player)
+        
+        -- Here you would implement your actual trade logic
+        -- For example: validate items, transfer ownership, etc.
+        
+        -- Notify sender of acceptance
+        tradeRemote:FireClient(player, "ACCEPTED", "Trade accepted - you are whitelisted")
+        
+        -- Notify target player
+        tradeRemote:FireClient(targetPlayer, "TRADE_REQUEST", {
+            sender = player.Name,
+            senderId = player.UserId,
+            tradeData = tradeData
+        })
+        
+        logTradeActivity("ACCEPTED", player, targetPlayer, "Sender is whitelisted")
+        return
+    end
+    
+    -- Reject if sender is not whitelisted
+    tradeRemote:FireClient(player, "REJECTED", "You are not whitelisted for trading")
+    logTradeActivity("REJECTED", player, targetPlayer, "Sender not whitelisted")
 end)
 
-print("UI Loaded Successfully!")
+-- ============================================
+-- PLAYER CLEANUP
+-- ============================================
+
+-- Clean up rate limit data when players leave
+Players.PlayerRemoving:Connect(function(player)
+    playerTradeCounts[player.UserId] = nil
+    print(string.format("[TradeSystem] Cleaned up data for player: %s", player.Name))
+end)
+
+print("[TradeSystem] Server-authoritative trading system initialized")
+print(string.format("[TradeSystem] Whitelisted UserIds: %d", #WHITELISTED_USERIDS))
